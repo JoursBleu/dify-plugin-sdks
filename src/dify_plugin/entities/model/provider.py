@@ -133,6 +133,7 @@ class SimpleProviderEntity(BaseModel):
     icon_small_dark: I18nObject | None = None
     icon_large_dark: I18nObject | None = None
     supported_model_types: Sequence[ModelType]
+    remote_model_catalog: bool = False
     models: list[AIModelEntity] = []
 
 
@@ -206,6 +207,7 @@ class ProviderEntity(BaseModel):
     help: ProviderHelpEntity | None = None
     supported_model_types: Sequence[ModelType]
     configurate_methods: list[ConfigurateMethod]
+    remote_model_catalog: bool = False
     models: list[AIModelEntity] = Field(default_factory=list)
     provider_credential_schema: ProviderCredentialSchema | None = None
     model_credential_schema: ModelCredentialSchema | None = None
@@ -231,6 +233,7 @@ class ProviderEntity(BaseModel):
             icon_small_dark=self.icon_small_dark,
             icon_large_dark=self.icon_large_dark,
             supported_model_types=self.supported_model_types,
+            remote_model_catalog=self.remote_model_catalog,
             models=self.models,
         )
 

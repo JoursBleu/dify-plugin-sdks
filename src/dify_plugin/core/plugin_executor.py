@@ -17,6 +17,7 @@ from dify_plugin.core.entities.plugin.request import (
     DynamicParameterFetchParameterOptionsRequest,
     EndpointInvokeRequest,
     ModelCheckPollingRequest,
+    ModelFetchModelsRequest,
     ModelGetAIModelSchemas,
     ModelGetLLMNumTokens,
     ModelGetTextEmbeddingNumTokens,
@@ -54,11 +55,13 @@ from dify_plugin.core.plugin_registration import PluginRegistration
 from dify_plugin.core.runtime import Session
 from dify_plugin.core.session_context import use_current_session
 from dify_plugin.core.utils.http_parser import deserialize_request, serialize_response
+from dify_plugin.core.utils.model_catalog import sanitize_catalog_provider_error
 from dify_plugin.entities import ParameterOption
 from dify_plugin.entities.agent import AgentRuntime
 from dify_plugin.entities.datasource import (
     DatasourceRuntime,
 )
+from dify_plugin.entities.model import AIModelEntity
 from dify_plugin.entities.provider_config import CredentialType
 from dify_plugin.entities.tool import ToolRuntime
 from dify_plugin.entities.trigger import (
@@ -93,6 +96,7 @@ if TYPE_CHECKING:
 
 _EBML_MAX_ID_WIDTH = 4
 _EBML_MAX_SIZE_WIDTH = 8
+_MAX_REMOTE_MODELS = 2048
 
 
 def _read_ebml_size(data: bytes, offset: int) -> tuple[int, int] | None:
@@ -629,27 +633,93 @@ class PluginExecutor:  # ruff:ignore[too-many-public-methods]
                 msg,
             )
 
+    def get_ai_model_list(
+        self,
+        session: Session,
+        data: ModelFetchModelsRequest,
+    ) -> dict[str, list[AIModelEntity]]:
+        try:
+            provider_instance = self.registration.get_model_provider_instance(
+                data.provider
+            )
+            provider_schema = (
+                provider_instance.get_provider_schema() if provider_instance else None
+            )
+        except Exception as error:
+            raise sanitize_catalog_provider_error(error) from None
+        if provider_instance is None:
+            msg = "Remote model catalog provider not found"
+            raise ValueError(msg)
+
+        if not provider_schema.remote_model_catalog:
+            msg = "Provider does not support remote model catalogs"
+            raise ValueError(msg)
+        if data.model_type not in provider_schema.supported_model_types:
+            msg = "Provider does not support the requested model type"
+            raise ValueError(msg)
+
+        with use_current_session(session):
+            try:
+                models = provider_instance.fetch_models(
+                    model_type=data.model_type,
+                    credentials=data.credentials,
+                )
+            except Exception as error:
+                raise sanitize_catalog_provider_error(error) from None
+
+        if not isinstance(models, list):
+            msg = "Remote model catalog must be a list of AIModelEntity objects"
+            raise TypeError(msg)
+        if len(models) > _MAX_REMOTE_MODELS:
+            msg = (
+                f"Remote model catalog must contain at most {_MAX_REMOTE_MODELS} models"
+            )
+            raise ValueError(msg)
+
+        model_ids: set[str] = set()
+        for model in models:
+            if not isinstance(model, AIModelEntity):
+                msg = "Remote model catalog must contain only AIModelEntity objects"
+                raise TypeError(msg)
+            if model.model_type != data.model_type:
+                msg = "Remote model catalog contains a different model type"
+                raise ValueError(msg)
+            if model.model in model_ids:
+                msg = "Remote model catalog contains duplicate model IDs"
+                raise ValueError(msg)
+            model_ids.add(model.model)
+
+        return {"models": models}
+
     def get_ai_model_schemas(
         self,
         session: Session,
         data: ModelGetAIModelSchemas,
     ) -> dict[str, object]:
         del session
-        model_instance = self.registration.get_model_instance(
-            data.provider,
-            data.model_type,
+        provider_instance = self.registration.get_model_provider_instance(data.provider)
+        remote_catalog = (
+            provider_instance is not None
+            and provider_instance.get_provider_schema().remote_model_catalog
         )
-        if isinstance(model_instance, AIModel):
-            return {
-                "model_schema": model_instance.get_model_schema(
-                    data.model,
-                    data.credentials,
-                ),
-            }
-        msg = f"Model `{data.model_type}` not found for provider `{data.provider}`"
-        raise ValueError(
-            msg,
-        )
+        try:
+            model_instance = self.registration.get_model_instance(
+                data.provider,
+                data.model_type,
+            )
+            if isinstance(model_instance, AIModel):
+                return {
+                    "model_schema": model_instance.get_model_schema(
+                        data.model,
+                        data.credentials,
+                    ),
+                }
+            msg = f"Model `{data.model_type}` not found for provider `{data.provider}`"
+            raise ValueError(msg)
+        except Exception as error:
+            if not remote_catalog:
+                raise
+            raise sanitize_catalog_provider_error(error) from None
 
     def invoke_moderation(
         self,

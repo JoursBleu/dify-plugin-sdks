@@ -10,6 +10,7 @@ supported_model_types:
   - moderation
 configurate_methods:
   - predefined-model
+remote_model_catalog: true
 models:
   llm:
     predefined: [models/llm.yaml]

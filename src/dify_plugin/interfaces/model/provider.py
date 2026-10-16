@@ -52,6 +52,19 @@ class ModelProvider(ABC):
         """
         return self.provider_schema
 
+    def fetch_models(
+        self,
+        model_type: ModelType,
+        credentials: dict,
+    ) -> list[AIModelEntity]:
+        """Fetch the models available to these provider credentials.
+
+        Providers must opt in with ``remote_model_catalog`` and implement this
+        method. Return at most 2048 entities of the requested type with unique
+        model IDs. The static ``models()`` path remains independent.
+        """
+        raise NotImplementedError
+
     def models(self, model_type: ModelType) -> list[AIModelEntity]:
         """
         Get all models for given model type

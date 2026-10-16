@@ -1,3 +1,5 @@
+import json
+import logging
 import threading
 from collections.abc import Callable, Generator, Iterator
 from contextvars import ContextVar
@@ -13,6 +15,7 @@ from dify_plugin.core.server.__base.request_reader import RequestReader
 from dify_plugin.core.server.__base.response_writer import ResponseWriter
 from dify_plugin.core.server.serverless.request_reader import ServerlessRequestReader
 from dify_plugin.core.server.serverless.response_writer import ServerlessResponseWriter
+from dify_plugin.core.server.tcp.request_reader import TCPReaderWriter
 from dify_plugin.errors.model import InvokeAuthorizationError
 from tests.servers.helpers import (
     CallbackIOServer,
@@ -198,6 +201,84 @@ def test_writer_failure_still_finishes_request(
             "session-1", {}, server.request_reader, writer
         )
 
+    assert writer.done_count == 1
+
+
+@pytest.mark.parametrize("reader_kind", ["memory", "tcp", "serverless"])
+@pytest.mark.parametrize("request_type", ["model", "tool", None])
+@pytest.mark.parametrize("error_kind", ["authorization", "type", "untrusted"])
+def test_catalog_action_sanitizes_errors_even_before_request_validation(
+    server: CallbackIOServer,
+    reader_kind: str,
+    request_type: str | None,
+    error_kind: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    private_marker = "synthetic-private-io-catalog-marker"
+    authorization_message = (
+        "Incorrect model credentials provided, please check and try again."
+    )
+
+    class UntrustedError(Exception):
+        def __str__(self) -> str:
+            pytest.fail("Catalog errors must not stringify untrusted exceptions")
+            return super().__str__()
+
+    errors = {
+        "authorization": InvokeAuthorizationError(private_marker),
+        "type": TypeError(private_marker),
+        "untrusted": UntrustedError(private_marker),
+    }
+    writer = RecordingResponseWriter()
+    reader = (
+        ServerlessRequestReader()
+        if reader_kind == "serverless"
+        else TCPReaderWriter("offline.invalid", 1, "synthetic-key")
+        if reader_kind == "tcp"
+        else server.request_reader
+    )
+
+    def execute(*_args: object) -> None:
+        raise errors[error_kind]
+
+    server.handler = execute
+    caplog.set_level(logging.DEBUG, logger="dify_plugin")
+    try:
+        server._execute_request_in_thread(
+            "session-1",
+            {
+                "type": request_type,
+                "action": "get_ai_model_list",
+                "credentials": {"api_key": private_marker},
+            },
+            reader,
+            writer,
+        )
+    finally:
+        reader.close()
+    assert [frame["data"]["type"] for frame in writer.messages] == ["error", "end"]
+    error_data = writer.messages[0]["data"]["data"]
+    assert error_data == (
+        {
+            "error_type": "InvokeAuthorizationError",
+            "message": authorization_message,
+            "args": {"description": authorization_message},
+        }
+        if error_kind == "authorization"
+        else {
+            "error_type": "TypeError" if error_kind == "type" else "InvokeError",
+            "message": "Invalid remote model catalog request",
+            "args": {},
+        }
+    )
+    assert private_marker not in json.dumps(writer.messages)
+    assert "traceback" not in error_data["args"]
+    assert private_marker not in caplog.text
+    assert caplog.records
+    for record in caplog.records:
+        assert record.exc_info is None
+        assert record.stack_info is None
+        assert private_marker not in repr(record.__dict__)
     assert writer.done_count == 1
 
 

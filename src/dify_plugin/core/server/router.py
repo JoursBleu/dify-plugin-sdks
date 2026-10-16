@@ -3,6 +3,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from dify_plugin.core.entities.plugin.request import ModelActions
 from dify_plugin.core.runtime import Session
 from dify_plugin.core.server.__base.request_reader import RequestReader
 from dify_plugin.core.server.__base.response_writer import ResponseWriter
@@ -49,6 +50,11 @@ class Router:
                 try:
                     data = annotation(**data)
                 except TypeError as e:
+                    if (
+                        isinstance(data, dict)
+                        and data.get("action") == ModelActions.GetAIModelList.value
+                    ):
+                        raise
                     if not self.response_writer:
                         logger.exception("failed to route request: %s")
                     else:
@@ -68,6 +74,11 @@ class Router:
                 try:
                     data = annotation(**data)
                 except TypeError as e:
+                    if (
+                        isinstance(data, dict)
+                        and data.get("action") == ModelActions.GetAIModelList.value
+                    ):
+                        raise
                     if not self.response_writer:
                         logger.exception("failed to route request: %s")
                     else:

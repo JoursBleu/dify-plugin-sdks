@@ -415,6 +415,14 @@ class Plugin(IOServer, Router):
         )
 
         self.register_route(
+            self.plugin_executer.get_ai_model_list,
+            lambda data: (
+                data.get("type") == PluginInvokeType.Model.value
+                and data.get("action") == ModelActions.GetAIModelList.value
+            ),
+        )
+
+        self.register_route(
             self.plugin_executer.validate_datasource_credentials,
             lambda data: (
                 data.get("type") == PluginInvokeType.Datasource.value

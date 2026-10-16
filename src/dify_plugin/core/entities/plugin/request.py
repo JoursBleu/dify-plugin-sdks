@@ -67,6 +67,7 @@ class ModelActions(StrEnum):
     InvokeSpeech2Text = "invoke_speech2text"
     InvokeModeration = "invoke_moderation"
     GetAIModelSchemas = "get_ai_model_schemas"
+    GetAIModelList = "get_ai_model_list"
 
 
 class EndpointActions(StrEnum):
@@ -292,6 +293,17 @@ class ModelValidateModelCredentialsRequest(BaseModel):
 
 class ModelGetAIModelSchemas(PluginAccessModelRequest):
     action: ModelActions = ModelActions.GetAIModelSchemas
+
+
+class ModelFetchModelsRequest(BaseModel):
+    type: PluginInvokeType = PluginInvokeType.Model
+    user_id: str
+    provider: str
+    model_type: ModelType
+    credentials: dict
+    action: ModelActions = ModelActions.GetAIModelList
+
+    model_config = ConfigDict(protected_namespaces=())
 
 
 class EndpointInvokeRequest(BaseModel):

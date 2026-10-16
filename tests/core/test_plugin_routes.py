@@ -623,6 +623,13 @@ CASES += [
     for action, model_type, payload, expected in MODEL_CASES
 ]
 
+CASES.append((
+    "model",
+    "get_ai_model_list",
+    {"provider": "contract_models", "model_type": "llm"},
+    [{"models": [{"model": "remote-echo", "model_type": "llm"}]}],
+))
+
 
 def assert_contains(actual: object, expected: object) -> None:
     if isinstance(expected, dict):
@@ -826,7 +833,14 @@ def test_invalid_action_payload_reports_one_error_and_ends(
     assert len(messages) == 1
     assert messages[0]["type"] == "error"
     assert messages[0]["data"]["error_type"] == "ValidationError"
-    assert required_field in messages[0]["data"]["message"]
+    if action == "get_ai_model_list":
+        assert messages[0]["data"] == {
+            "error_type": "ValidationError",
+            "message": "Invalid remote model catalog request",
+            "args": {},
+        }
+    else:
+        assert required_field in messages[0]["data"]["message"]
 
 
 @pytest.mark.parametrize("action", [case[1] for case in CASES if case[0] != "endpoint"])
@@ -843,7 +857,14 @@ def test_missing_provider_reports_one_error_and_ends(
     assert len(messages) == 1
     assert messages[0]["type"] == "error"
     assert messages[0]["data"]["error_type"] in {"ValueError", "TypeError"}
-    assert "missing-provider" in messages[0]["data"]["message"]
+    if action == "get_ai_model_list":
+        assert messages[0]["data"] == {
+            "error_type": "ValueError",
+            "message": "Invalid remote model catalog request",
+            "args": {},
+        }
+    else:
+        assert "missing-provider" in messages[0]["data"]["message"]
 
 
 @pytest.mark.parametrize(
@@ -852,6 +873,7 @@ def test_missing_provider_reports_one_error_and_ends(
         "validate_tool_credentials",
         "validate_provider_credentials",
         "validate_model_credentials",
+        "get_ai_model_list",
         "validate_datasource_credentials",
         "validate_trigger_credentials",
     ],
@@ -865,8 +887,17 @@ def test_invalid_credentials_preserve_plugin_failure(
 
     assert len(messages) == 1
     assert messages[0]["type"] == "error"
-    assert messages[0]["data"]["error_type"] == "ValueError"
-    assert messages[0]["data"]["message"] == "invalid credentials"
+    if action == "get_ai_model_list":
+        assert messages[0]["data"] == {
+            "error_type": "InvokeError",
+            "message": "Remote model catalog provider failed",
+            "args": {"description": "Remote model catalog provider failed"},
+        }
+        assert "invalid credentials" not in str(messages)
+        assert "traceback" not in messages[0]["data"]["args"]
+    else:
+        assert messages[0]["data"]["error_type"] == "ValueError"
+        assert messages[0]["data"]["message"] == "invalid credentials"
 
 
 @pytest.mark.parametrize(

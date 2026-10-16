@@ -10,12 +10,17 @@ from threading import Thread
 
 from dify_plugin.config.config import DifyPluginEnv
 from dify_plugin.core.entities.plugin.io import PluginInStream, PluginInStreamEvent
+from dify_plugin.core.entities.plugin.request import ModelActions
 from dify_plugin.core.server.__base.request_reader import RequestReader
 from dify_plugin.core.server.__base.response_writer import ResponseWriter
 from dify_plugin.core.server.serverless.request_reader import ServerlessRequestReader
 from dify_plugin.core.server.serverless.response_writer import ServerlessResponseWriter
 from dify_plugin.core.server.stdio.request_reader import StdioRequestReader
 from dify_plugin.core.server.tcp.request_reader import TCPReaderWriter
+from dify_plugin.core.utils.model_catalog import (
+    catalog_error_object,
+    is_catalog_provider_error,
+)
 from dify_plugin.errors.model import InvokeError
 
 logger = logging.getLogger(__name__)
@@ -113,25 +118,31 @@ class IOServer(ABC):
                 else:
                     execute()
             except Exception as e:
-                args = {"traceback": traceback.format_exc()}
-                if isinstance(e, InvokeError):
-                    args["description"] = e.description
+                if (
+                    isinstance(data, dict)
+                    and data.get("action") == ModelActions.GetAIModelList.value
+                ) or is_catalog_provider_error(e):
+                    error_data = catalog_error_object(e)
+                    logger.warning("Remote model catalog request failed")
+                else:
+                    args = {"traceback": traceback.format_exc()}
+                    if isinstance(e, InvokeError):
+                        args["description"] = e.description
 
-                if isinstance(reader, (TCPReaderWriter, ServerlessRequestReader)):
-                    logger.exception(
-                        "Unexpected error occurred when executing request",
-                        exc_info=e,
-                    )
+                    if isinstance(reader, (TCPReaderWriter, ServerlessRequestReader)):
+                        logger.exception(
+                            "Unexpected error occurred when executing request",
+                            exc_info=e,
+                        )
+                    error_data = {
+                        "error_type": type(e).__name__,
+                        "message": str(e),
+                        "args": args,
+                    }
 
                 writer.session_message(
                     session_id=session_id,
-                    data=writer.stream_error_object(
-                        data={
-                            "error_type": type(e).__name__,
-                            "message": str(e),
-                            "args": args,
-                        }
-                    ),
+                    data=writer.stream_error_object(data=error_data),
                 )
 
             writer.session_message(
