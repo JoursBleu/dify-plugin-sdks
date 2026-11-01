@@ -553,6 +553,12 @@ MODEL_CASES = [
         {},
         [{"model_schema": {"model": "echo", "model_type": "llm"}}],
     ),
+    (
+        "get_ai_model_list",
+        "llm",
+        {},
+        [{"models": [{"model": "echo", "model_type": "llm"}]}],
+    ),
 ]
 
 MODEL_METHODS = {

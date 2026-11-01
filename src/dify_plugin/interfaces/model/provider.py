@@ -52,6 +52,22 @@ class ModelProvider(ABC):
         """
         return self.provider_schema
 
+    def fetch_models(
+        self, model_type: ModelType, credentials: dict
+    ) -> list[AIModelEntity]:
+        """
+        Get models available with given credentials, defaults to declared models
+
+        :param model_type: model type defined in `ModelType`
+        :param credentials: provider credentials
+        :return: list of models
+
+        Returns:
+            The return value.
+        """
+        del credentials
+        return self.models(model_type)
+
     def models(self, model_type: ModelType) -> list[AIModelEntity]:
         """
         Get all models for given model type

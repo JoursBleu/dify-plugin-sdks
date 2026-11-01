@@ -18,6 +18,7 @@ from dify_plugin.core.entities.plugin.request import (
     DynamicParameterFetchParameterOptionsRequest,
     EndpointInvokeRequest,
     ModelCheckPollingRequest,
+    ModelGetAIModelList,
     ModelGetAIModelSchemas,
     ModelGetLLMNumTokens,
     ModelGetTextEmbeddingNumTokens,
@@ -666,6 +667,20 @@ class PluginExecutor:  # ruff:ignore[too-many-public-methods]
         raise ValueError(
             msg,
         )
+
+    def get_ai_model_list(
+        self,
+        session: Session,
+        data: ModelGetAIModelList,
+    ) -> dict[str, object]:
+        del session
+        provider_instance = self.registration.get_model_provider_instance(data.provider)
+        if provider_instance is None:
+            msg = f"Provider `{data.provider}` not found"
+            raise ValueError(msg)
+        return {
+            "models": provider_instance.fetch_models(data.model_type, data.credentials)
+        }
 
     def invoke_moderation(
         self,
